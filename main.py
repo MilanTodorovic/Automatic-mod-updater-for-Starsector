@@ -5,22 +5,23 @@ import multiprocessing
 import requests
 from bs4 import BeautifulSoup as bs
 import zipfile
-import lzma
-
 
 path_windows = r"C:\Program Files (x86)\Fractal Softworks\Starsector\mods\\"
 # MODTHREAD is a plceholder for the actual ID of the thread
 mod_thread = "https://fractalsoftworks.com/forum/index.php?topic=MODTHREAD.0"
-HEADERS = {"User-Agent" : "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36"}
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/89.0.4389.90 Safari/537.36"}
 # for the maximum number of threads to run at once
 number_of_physical_cores = multiprocessing.cpu_count()
+
 
 def parse_local_mod_info(_dir, file):
     dct = {}
     try:
-        with open(os.path.join(path_windows,_dir,file)) as f:
+        with open(os.path.join(path_windows, _dir, file)) as f:
             content = [lines.strip() for lines in f.readlines()]
-            #print(content)
+            # print(content)
             dct = parse_mod_info(content)
     except Exception as e:
         print(f"Mod {_dir} contains an error in the versioning file.")
@@ -33,16 +34,16 @@ def parse_online_mod_info(_dir, url):
     dct = {}
     try:
         response = requests.get(url, headers=HEADERS)
-        #print(response)
+        # print(response)
         content = response.content.decode("utf8").split("\n")
-        #print("Splitted online version ", lst1)
+        # print("Splitted online version ", lst1)
         dct = parse_mod_info(content)
     except Exception as e:
         print(f"{_dir} - Dead URL.")
         print(e)
     finally:
         return dct
-    
+
 
 def parse_mod_info(content):
     dct = {}
@@ -55,15 +56,15 @@ def parse_mod_info(content):
             try:
                 k, v = l.strip().split(":", 1)  # split just the first :
                 v1 = v.replace("\"", "").replace(",", "").strip()
-                dct[k.replace("\"","").strip()] = v1 if len(v1) else None
+                dct[k.replace("\"", "").strip()] = v1 if len(v1) else None
             except Exception as e:
                 pass
     return dct
-    
+
 
 def compare_mod_versions(local, online):
-    return local.get("major","0") < online.get("major","0") or local.get("minor","0") < online.get("minor","0")\
-            or local.get("patch","0") < online.get("patch","0") 
+    return local.get("major", "0") < online.get("major", "0") or local.get("minor", "0") < online.get("minor", "0") \
+           or local.get("patch", "0") < online.get("patch", "0")
 
 
 def visit_thread_url(url, _dir):
@@ -86,12 +87,14 @@ def visit_thread_url(url, _dir):
 
 def parse_webpage(response):
     soup = bs(response.content, 'html.parser')
-    #print(soup)
+    # print(soup)
     github = soup.select_one("a[href*='releases/download']")
     bitbucket = soup.select_one("a[href*='/downloads']")
     patreon = soup.select_one("a[href*='https://www.patreon.com/posts/']")
     googledrive = soup.select_one("a[href*='drive.google.com']")
-    print(f"URLs in the forum thread :\nGithub: {github}\nBitbucket: {bitbucket}\nPatreon: {patreon}\nGoogle Drive: {googledrive}")
+    print(
+        f"URLs in the forum thread :\nGithub: {github}\nBitbucket: {bitbucket}\nPatreon: {patreon}\n"
+        f"Google Drive: {googledrive}")
     if github:
         return github['href']
     elif bitbucket:
@@ -112,15 +115,15 @@ def parse_patreon(url):
 
 
 def download_mod(url, _dir):
+    if url.endswith("7z"):
+        file_name = f"{_dir}.7z"
+    else:
+        file_name = f"{_dir}.zip"
+    save_path = os.path.join(os.path.expanduser('~'), 'Downloads\\')
     try:
-        if url.endswith("7z"):
-            file_name = f"{_dir}.7z"
-        else:
-            file_name = f"{_dir}.zip"
-        save_path = os.path.join(os.path.expanduser('~'), 'Downloads\\')
         chunk_size = 128
         response = requests.get(url, stream=True)
-        with open(save_path+file_name, 'wb') as fd:
+        with open(save_path + file_name, 'wb') as fd:
             for chunk in response.iter_content(chunk_size=chunk_size):
                 fd.write(chunk)
     except Exception as e:
@@ -133,13 +136,13 @@ def download_mod(url, _dir):
 
 def extract_and_replace(save_path, file_name, _dir):
     try:
-        with zipfile.ZipFile(save_path+file_name, "r") as zip_ref:
+        with zipfile.ZipFile(save_path + file_name, "r") as zip_ref:
             zip_ref.extractall(save_path)  # change to path_windows
     except Exception as e:
         print("Couldn't unzip file with zipfile. Trying winrar subprocess.")
         try:
             import subprocess
-            subprocess.Popen(f"C:\\Program Files\\WinRAR\\WinRAR.exe x {save_path+file_name} {save_path}")
+            subprocess.Popen(f"C:\\Program Files\\WinRAR\\WinRAR.exe x {save_path + file_name} {save_path}")
             print("Unzipping sucessful!")
         except Exception as e:
             print(f"Error while extracting {file_name} : {e}")
@@ -152,27 +155,35 @@ def start_windows():
     print(f"Mods found: {dirs}")
     for _dir in dirs:
         print("\n<------------------------------->")
-        lst = os.listdir(os.path.join(path_windows,_dir))
+        lst = os.listdir(os.path.join(path_windows, _dir))
         print(f"{_dir} : {lst}")
         for file in lst:
             if file.endswith(".version"):
                 print(f"Mod {_dir} contains a versioning file: {file}")
                 # parse the local versioning file, can be empty
                 dct_local = parse_local_mod_info(_dir, file)
-                #print(dct_local)
+                # print(dct_local)
                 # get and parse the online versioning file
                 if dct_local.get("masterVersionFile", 0):
                     # can be empty due to a dead link
                     dct_online = parse_online_mod_info(_dir, dct_local["masterVersionFile"])
                     if dct_online:
-                        print(f"\nLocal : {dct_local.get('major','0')}.{dct_local.get('minor','0')}.{dct_local.get('patch','0')}")
-                        print(f"Online : {dct_online.get('major','0')}.{dct_online.get('minor','0')}.{dct_online.get('patch','0')}")
+                        print(
+                            f"\nLocal : {dct_local.get('major', '0')}.{dct_local.get('minor', '0')}."
+                            f"{dct_local.get('patch', '0')}")
+                        print(
+                            f"Online : {dct_online.get('major', '0')}.{dct_online.get('minor', '0')}."
+                            f"{dct_online.get('patch', '0')}")
                         result = compare_mod_versions(dct_local, dct_online)
                         print(f"Result : {result}")
                         if result:
                             print(f"Newer version of '{_dir}' avaibale:")
-                            print(f"Local : {dct_local.get('major','0')}.{dct_local.get('minor','0')}.{dct_local.get('patch','0')}")
-                            print(f"Online : {dct_online.get('major','0')}.{dct_online.get('minor','0')}.{dct_online.get('patch','0')}")
+                            print(
+                                f"Local : {dct_local.get('major', '0')}.{dct_local.get('minor', '0')}."
+                                f"{dct_local.get('patch', '0')}")
+                            print(
+                                f"Online : {dct_online.get('major', '0')}.{dct_online.get('minor', '0')}."
+                                f"{dct_online.get('patch', '0')}")
                         print("--------------")
                 else:
                     print(f"Mod {_dir} doesn't specify a master version file. Cannot compare versions.")

@@ -1,12 +1,14 @@
+# Python 3.9.2
 import platform
 import os
-import threading
+from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
 import requests
 from bs4 import BeautifulSoup as bs
 import zipfile
 
 path_windows = r"C:\Program Files (x86)\Fractal Softworks\Starsector\mods\\"
+JUST_UPDATES = False
 # MODTHREAD is a plceholder for the actual ID of the thread
 mod_thread = "https://fractalsoftworks.com/forum/index.php?topic=MODTHREAD.0"
 HEADERS = {
@@ -55,6 +57,10 @@ def parse_mod_info(content):
             # split everything and store in a dicttionary
             try:
                 k, v = l.strip().split(":", 1)  # split just the first :
+                position = v.find('#')
+                if position:
+                    # takes care of trailing comments
+                    v = v[:position]
                 v1 = v.replace("\"", "").replace(",", "").strip()
                 dct[k.replace("\"", "").strip()] = v1 if len(v1) else None
             except Exception as e:
@@ -63,17 +69,19 @@ def parse_mod_info(content):
 
 
 def compare_mod_versions(local, online):
-    return local.get("major", "0") < online.get("major", "0") or local.get("minor", "0") < online.get("minor", "0") \
-           or local.get("patch", "0") < online.get("patch", "0")
+    if JUST_UPDATES:
+        return local.get("major", "0") < online.get("major", "0") or local.get("minor", "0") < online.get("minor", "0") \
+               or local.get("patch", "0") < online.get("patch", "0")
+    else:
+        return True
 
 
 def visit_thread_url(url, _dir):
     try:
         response = requests.get(url, headers=HEADERS)
         if response.status_code == 200:
-            _url = parse_webpage(response)
-            if _url:
-                mod_download_url = _url
+            mod_download_url = parse_webpage(response)
+            if mod_download_url:
                 download_mod(mod_download_url, _dir)
                 # print(mod_download_url)
             else:
@@ -85,7 +93,7 @@ def visit_thread_url(url, _dir):
         print(e)
 
 
-def parse_webpage(response):
+def parse_webpage(response) -> str:
     soup = bs(response.content, 'html.parser')
     # print(soup)
     github = soup.select_one("a[href*='releases/download']")
@@ -104,7 +112,7 @@ def parse_webpage(response):
     elif googledrive:
         return googledrive['href']
     else:
-        return []
+        return ""
 
 
 def parse_patreon(url):
@@ -148,60 +156,71 @@ def extract_and_replace(save_path, file_name, _dir):
             print(f"Error while extracting {file_name} : {e}")
     else:
         print(f"Extraction of {file_name} successful.")
+    finally:
+        try:
+            os.remove(save_path+file_name)
+            print(f"{file_name} deleted.")
+        except Exception as e:
+            print(f"Soemthing went wrong while deleting {file_name} : {e}")
 
 
-def start_windows():
-    root, dirs, files = next(os.walk(path_windows))  # gets only the directoories
-    print(f"Mods found: {dirs}")
-    for _dir in dirs:
-        print("\n<------------------------------->")
-        lst = os.listdir(os.path.join(path_windows, _dir))
-        print(f"{_dir} : {lst}")
-        for file in lst:
-            if file.endswith(".version"):
-                print(f"Mod {_dir} contains a versioning file: {file}")
-                # parse the local versioning file, can be empty
-                dct_local = parse_local_mod_info(_dir, file)
-                # print(dct_local)
-                # get and parse the online versioning file
-                if dct_local.get("masterVersionFile", 0):
-                    # can be empty due to a dead link
-                    dct_online = parse_online_mod_info(_dir, dct_local["masterVersionFile"])
-                    if dct_online:
+def do_work(_dir):
+    print(f"Task started on {os.getpid()}")
+    print("\n<------------------------------->")
+    lst = os.listdir(os.path.join(path_windows, _dir))
+    print(f"{_dir} : {lst}")
+    for file in lst:
+        if file.endswith(".version"):
+            print(f"Mod {_dir} contains a versioning file: {file}")
+            # parse the local versioning file, can be empty
+            dct_local = parse_local_mod_info(_dir, file)
+            # print(dct_local)
+            # get and parse the online versioning file
+            if dct_local.get("masterVersionFile", 0):
+                # can be empty due to a dead link
+                dct_online = parse_online_mod_info(_dir, dct_local["masterVersionFile"])
+                if dct_online:
+                    print(
+                        f"\nLocal : {dct_local.get('major', '0')}.{dct_local.get('minor', '0')}."
+                        f"{dct_local.get('patch', '0')}")
+                    print(
+                        f"Online : {dct_online.get('major', '0')}.{dct_online.get('minor', '0')}."
+                        f"{dct_online.get('patch', '0')}")
+                    result = compare_mod_versions(dct_local, dct_online)
+                    print(f"Result : {result}")
+                    if result:
+                        print(f"Newer version of '{_dir}' avaibale:")
                         print(
-                            f"\nLocal : {dct_local.get('major', '0')}.{dct_local.get('minor', '0')}."
+                            f"Local : {dct_local.get('major', '0')}.{dct_local.get('minor', '0')}."
                             f"{dct_local.get('patch', '0')}")
                         print(
                             f"Online : {dct_online.get('major', '0')}.{dct_online.get('minor', '0')}."
                             f"{dct_online.get('patch', '0')}")
-                        result = compare_mod_versions(dct_local, dct_online)
-                        print(f"Result : {result}")
-                        if result:
-                            print(f"Newer version of '{_dir}' avaibale:")
-                            print(
-                                f"Local : {dct_local.get('major', '0')}.{dct_local.get('minor', '0')}."
-                                f"{dct_local.get('patch', '0')}")
-                            print(
-                                f"Online : {dct_online.get('major', '0')}.{dct_online.get('minor', '0')}."
-                                f"{dct_online.get('patch', '0')}")
-                        print("--------------")
-                else:
-                    print(f"Mod {_dir} doesn't specify a master version file. Cannot compare versions.")
-                # visit mod thread
-                if dct_local.get("modThreadId", 0):
-                    url = mod_thread.replace("MODTHREAD", dct_local["modThreadId"])
-                    print(url)
-                    visit_thread_url(url, _dir)
-                    print("<------------------------------->")
-                else:
-                    print(f"Mod {_dir} doesn't specify a mod thread. Cannot be updated.")
-                    print("<------------------------------->")
-                break
+                    print("--------------")
             else:
-                continue
+                print(f"Mod {_dir} doesn't specify a master version file. Cannot compare versions.")
+            # visit mod thread
+            if dct_local.get("modThreadId", 0):
+                url = mod_thread.replace("MODTHREAD", dct_local["modThreadId"])
+                print(url)
+                visit_thread_url(url, _dir)
+                print("<------------------------------->")
+            else:
+                print(f"Mod {_dir} doesn't specify a mod thread. Cannot be updated.")
+                print("<------------------------------->")
+            # stops after finding the .version file
+            break
         else:
-            print(f"Mod {_dir} doesn't contains a versioning file.")
-            print("<------------------------------->")
+            continue
+    else:
+        print(f"Mod {_dir} doesn't contains a versioning file.")
+        print("<------------------------------->")
+
+def start_windows():
+    root, dirs, files = next(os.walk(path_windows))  # gets only the directoories
+    print(f"Mods found: {dirs}")
+    with ProcessPoolExecutor(max_workers=number_of_physical_cores//4) as executor:
+        executor.map(do_work, dirs)
 
 
 def start_mac():
@@ -219,6 +238,12 @@ if __name__ == "__main__":
     print(f"OS: {platform.system()}")
     print(f"CPU cores available: {number_of_physical_cores}")
     print("")
+    answer = input("Would you like to download just updates (else download everything anew)? y/n")
+    if answer == 'y' or answer == 'z':
+        JUST_UPDATES = True
+    else:
+        # JUST_UPDATES is by default false
+        pass
     if platform.system() == "Windows":
         start_windows()
     elif platform.system() == "Darwin":

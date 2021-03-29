@@ -216,18 +216,18 @@ def do_work(_dir):
         print(f"Mod {_dir} doesn't contains a versioning file.")
         print("<------------------------------->")
 
-def start_windows():
-    root, dirs, files = next(os.walk(path_windows))  # gets only the directoories
+def start_windows(cpus):
+    root, dirs, files = next(os.walk(path_windows))  # gets only the directories
     print(f"Mods found: {dirs}")
-    with ProcessPoolExecutor(max_workers=number_of_physical_cores//4) as executor:
+    with ProcessPoolExecutor(max_workers=cpus) as executor:
         executor.map(do_work, dirs)
 
 
-def start_mac():
+def start_mac(cpus):
     pass
 
 
-def start_linux():
+def start_linux(cpus):
     # from glob import glob
     # glob("/path/to/directory/*/")
     pass
@@ -237,18 +237,24 @@ if __name__ == "__main__":
     print("This script doesn't check for the compatability between game and mod versions.")
     print(f"OS: {platform.system()}")
     print(f"CPU cores available: {number_of_physical_cores}")
-    print("")
+    while True:
+        cpus = int(input(f"How many CPU cores would you like to use (1-{number_of_physical_cores})?"))
+        if cpus > number_of_physical_cores or cpus <= 0:
+            print("Bad input. Try again.")
+        else:
+            break
     answer = input("Would you like to download just updates (else download everything anew)? y/n")
     if answer == 'y' or answer == 'z':
         JUST_UPDATES = True
     else:
         # JUST_UPDATES is by default false
         pass
+
     if platform.system() == "Windows":
-        start_windows()
+        start_windows(cpus)
     elif platform.system() == "Darwin":
-        start_mac()
+        start_mac(cpus)
     elif platform.system() == "Linux":
-        start_linux()
+        start_linux(cpus)
     else:
         print("OS not supported.")
